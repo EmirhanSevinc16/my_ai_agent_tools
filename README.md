@@ -2,40 +2,59 @@
 
 🌐 **English** | [Türkçe](README.tr.md)
 
-A collection of reusable Python tools built to power AI agents (LLM-based agents). Each tool is defined both as a **Python function** and as an OpenAI-compatible **function calling schema**, so it can be used with NVIDIA, OpenAI, or any other API that supports the `tools` parameter.
+A small toolkit for building AI agents (LLM-based agents) that work in different roles. You define each tool **once**, give every agent only the tools its job needs, and run any agent with a single call. Each tool exists as a **Python function** together with an OpenAI-compatible **function calling schema**, so it can be used with NVIDIA, OpenAI, or any other API that supports the `tools` parameter.
 
 ## Table of Contents
 
 - [Features](#features)
+- [Project Structure](#project-structure)
 - [Installation](#installation)
+- [How It Works](#how-it-works)
 - [Tools Overview](#tools-overview)
 - [Tool Details](#tool-details)
   - [read_file](#1-read_file)
   - [edit_file](#2-edit_file)
   - [web_search](#3-web_search)
   - [fetch_web_page](#4-fetch_web_page)
-- [Helper Function: md_file_reading](#helper-function-md_file_reading)
-- [Tool Map and Schemas](#tool-map-and-schemas)
-- [Usage Example with an Agent](#usage-example-with-an-agent)
+- [Registry API](#registry-api)
+- [Agent Profiles](#agent-profiles)
+- [Running an Agent](#running-an-agent)
+- [Adding a New Tool](#adding-a-new-tool)
+- [Helpers: md_file_reading](#helpers-md_file_reading)
 - [Security Notes](#security-notes)
+- [License](#license)
 
 ## Features
 
-- File reading and writing
-- Web search via DuckDuckGo (no API key required)
-- Fetching cleaned text content from web pages
+- **Define once:** every tool is registered a single time, and its function and schema always stay together
+- **Role-based agents:** each agent only sees, and can only run, the tools it was granted (for example `code_agent` and `web_researcher`)
+- **Easy to grow:** give an agent a new tool by adding one name to its profile, without touching the tool's code
+- **Ready-made loop:** `run_agent` for one-off tasks and `run_turn` for multi-turn chats with memory
+- **Safe execution:** tool calls that are not allowed for the agent are refused before anything runs
 - All errors are returned as **strings** instead of raising exceptions, so the agent can see the error and correct itself
-- Easy integration into an agent loop via `TOOL_MAP` and `TOOL_SCHEMAS`
+- File reading and writing, web search via DuckDuckGo (no API key required), and cleaned text extraction from web pages
+
+## Project Structure
+
+```
+my_agent_tools/
+├── registry.py            # tool registry, agent profiles, execute
+├── tools_and_schemas.py   # tool functions and their schemas (registered on import)
+├── agents.py              # agent profiles: which agent gets which tools
+├── runner.py              # run_agent / run_turn loop
+├── helpers.py             # helper functions for your own code (not agent tools)
+└── pyproject.toml
+```
 
 ## Installation
 
 ```bash
 git clone https://github.com/<username>/<repo-name>.git
 cd <repo-name>
-pip install requests beautifulsoup4 ddgs
+pip install -e .
 ```
 
-Requirements:
+The `-e` (editable) flag makes Python use the cloned folder directly, so new tools and profile changes are visible in every project without reinstalling. This also installs the dependencies:
 
 | Package | Purpose |
 |---------|---------|
@@ -43,7 +62,26 @@ Requirements:
 | `beautifulsoup4` | Parsing and cleaning HTML |
 | `ddgs` | DuckDuckGo search |
 
+The examples below also use an OpenAI-compatible client (`pip install openai`). The package itself does not depend on it.
+
+**Without installing:** install the three packages above manually and add the folder to Python's path:
+
+```python
+import sys
+sys.path.insert(0, "/path/to/<repo-name>")
+```
+
 Python 3.9 or higher is recommended.
+
+## How It Works
+
+The toolkit has three layers:
+
+1. **Registry** (`registry.py`, `tools_and_schemas.py`): every tool is a "card" holding a function and its schema. Cards are registered once with `register_tool` and stored in the `TOOLS` dictionary.
+2. **Agent profiles** (`agents.py`): a profile is just a list of tool **names**. Profiles are stored in the `AGENTS` dictionary and point to the cards in the registry.
+3. **Runner** (`runner.py`): when an agent runs, only the schemas from its profile are sent to the model. Every tool call coming back from the model is checked against that profile before it is executed.
+
+Tools register themselves when `tools_and_schemas` is imported. `agents.py` imports it, so importing `agents` in your program is enough to load everything.
 
 ## Tools Overview
 
@@ -53,6 +91,8 @@ Python 3.9 or higher is recommended.
 | `edit_file` | Writes/overwrites a file with the given content | `path`, `content` | `str` |
 | `web_search` | Searches the internet | `query`, `max_results` (optional) | `List[Dict]` |
 | `fetch_web_page` | Fetches the text of a web page | `url` | `str` |
+
+When a tool runs through `execute`, results that are not strings (such as the list from `web_search`) are converted to a JSON string before being sent back to the model.
 
 ## Tool Details
 
@@ -171,92 +211,155 @@ fetch_web_page("https://docs.python.org/3/library/asyncio.html")
 
 > Content loaded dynamically via JavaScript cannot be fetched with this tool; only the HTML returned by the server is processed.
 
-## Helper Function: `md_file_reading`
+## Registry API
 
-This is **not an agent tool** (it is not part of `TOOL_MAP` or `TOOL_SCHEMAS`); it is a helper function called directly from your code. Its typical use is loading system prompts or rule files from Markdown.
+All of these live in `registry.py`:
 
-It reads a Markdown file and replaces the `{{ CURRENT_DATETIME }}` placeholder with the current date and time (in `%d %B %Y, %H:%M` format), so the agent knows the current time on every run.
+| Function | Description |
+|----------|-------------|
+| `register_tool(function, schema)` | Adds a tool to the registry. The name is read from the schema. Raises `ValueError` if the name is already registered |
+| `define_agent(agent, tools)` | Creates an agent profile (or resets an existing one) from a list of tool names. Raises `KeyError` if a name is not registered |
+| `grant(agent, *tool_names)` | Adds tools to an existing profile |
+| `revoke(agent, *tool_names)` | Removes tools from a profile |
+| `get_schemas(agent)` | Returns the schemas to send to the model (the `tools=` parameter) |
+| `execute(agent, name, args)` | Runs a tool call for an agent. `args` can be a dict or a JSON string. Always returns a string |
+| `get_function(name)`, `get_schema(name)` | Look up a registered tool's function or schema directly |
+
+`execute` never raises. If the agent is not allowed to use the tool it returns `Hata: '<name>' tool'u <agent> için tanımlı değil`, and if the tool itself fails it returns `Hata (<name>): <ErrorType>: <message>`. The model sees these messages and can correct itself.
+
+## Agent Profiles
+
+Profiles are defined in `agents.py`, which is the file you edit most often:
+
+```python
+import tools_and_schemas   # loads the tools into the registry
+from registry import define_agent
+
+define_agent("code_agent", tools=["read_file", "edit_file"])
+define_agent("web_researcher", tools=["web_search", "fetch_web_page"])
+```
+
+To give an agent a tool it was missing, add the tool's name to its list. To change a profile only while the program is running, use `grant` and `revoke`:
+
+```python
+import registry
+
+registry.grant("web_researcher", "read_file")
+registry.revoke("web_researcher", "read_file")
+```
+
+> `grant` and `revoke` only affect the running program. For a permanent change, edit `agents.py`.
+
+## Running an Agent
+
+`run_agent` runs a single task and returns the final answer. The `client` and `model` are passed in from outside, so the package never stores API keys and the same agents work with any OpenAI-compatible API:
+
+```python
+import os
+from openai import OpenAI
+
+import agents                      # loads tools and agent profiles
+from runner import run_agent
+
+client = OpenAI(base_url="<API_BASE_URL>", api_key=os.environ["<API_KEY_ENV_VAR>"])
+
+answer = run_agent(
+    agent="web_researcher",
+    task="Research the new features of Python 3.13.",
+    client=client,
+    model="<MODEL_NAME>",
+)
+print(answer)
+```
+
+For a multi-turn chat that remembers the conversation, keep a `messages` list and call `run_turn` for each user message. It updates the list in place:
+
+```python
+from helpers import md_file_reading
+from runner import run_turn
+
+messages = [{"role": "system", "content": md_file_reading("code_agent.md")}]
+
+while True:
+    user_input = input("You > ")
+    if user_input.strip().lower() == "quit":
+        break
+    messages.append({"role": "user", "content": user_input})
+    print(run_turn("code_agent", messages, client, "<MODEL_NAME>"))
+```
+
+**Parameters**
+
+| Name | Description |
+|------|-------------|
+| `agent` | Name of the agent profile to run |
+| `client`, `model` | An OpenAI-compatible client and the model name |
+| `max_turns` | Maximum number of model calls per request (default `10`). Prevents endless tool loops. If it is exceeded, an error message is returned |
+| `on_tool_call` | Optional callback `(name, arguments)` called before each tool runs, useful for printing progress in your own interface (`run_turn` only) |
+| `system_prompt` | Optional system prompt (`run_agent` only) |
+
+Give each agent its own system prompt (for example one Markdown file per agent). The profile decides which tools an agent has, and the prompt tells it its role.
+
+## Adding a New Tool
+
+1. In `tools_and_schemas.py`, write the function and register it with its schema:
+
+```python
+def word_count(text: str) -> str:
+    """Counts the words in the given text."""
+    return str(len(text.split()))
+
+
+register_tool(
+    word_count,
+    {
+        "type": "function",
+        "function": {
+            "name": "word_count",
+            "description": "Counts the words in the given text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to count the words of"},
+                },
+                "required": ["text"],
+            },
+        },
+    },
+)
+```
+
+2. In `agents.py`, add `"word_count"` to the profile of every agent that should use it.
+
+There is no second list to update: the function and its schema are registered together, so they cannot get out of sync.
+
+## Helpers: `md_file_reading`
+
+`helpers.py` holds functions that are **not agent tools**: they are never registered, the model cannot see them, and they are called directly from your own code.
+
+`md_file_reading` reads a Markdown file and replaces the `{{ CURRENT_DATETIME }}` placeholder with the current date and time (in `%d %B %Y, %H:%M` format). Its typical use is loading a system prompt, so the agent knows the current time on every run.
 
 **Example**
 
-`rules.md`:
+`code_agent.md`:
 
 ```markdown
-You are a helpful assistant.
+You are a helpful coding assistant.
 Current date and time: {{ CURRENT_DATETIME }}
 ```
 
 Usage:
 
 ```python
-system_prompt = md_file_reading("rules.md")
+system_prompt = md_file_reading("code_agent.md")
 ```
-
-If the file is not found: `Hata: Kurallar dosyası (<md_file>) bulunamadı.`
-
-## Tool Map and Schemas
-
-The code provides two main structures:
-
-- **`TOOL_MAP`**: A dictionary mapping tool names to Python functions. Used to execute tool calls coming from the model.
-- **`TOOL_SCHEMAS`**: A list of JSON schemas sent to the model, defining each tool's name, description, and parameters.
-
-```python
-TOOL_MAP = {
-    "read_file": read_file,
-    "edit_file": edit_file,
-    "web_search": web_search,
-    "fetch_web_page": fetch_web_page,
-}
-```
-
-To add a new tool:
-
-1. Write the Python function.
-2. Add it to `TOOL_MAP`.
-3. Add its schema to the `TOOL_SCHEMAS` list.
-
-## Usage Example with an Agent
-
-A basic agent loop with an OpenAI-compatible API (e.g. NVIDIA API):
-
-```python
-import json
-from openai import OpenAI
-
-client = OpenAI(base_url="<API_BASE_URL>", api_key="<API_KEY>")
-messages = [{"role": "user", "content": "Research the new features of Python 3.13."}]
-
-while True:
-    response = client.chat.completions.create(
-        model="<MODEL_NAME>",
-        messages=messages,
-        tools=TOOL_SCHEMAS,
-    )
-    msg = response.choices[0].message
-    messages.append(msg)
-
-    if not msg.tool_calls:
-        print(msg.content)
-        break
-
-    for call in msg.tool_calls:
-        func = TOOL_MAP[call.function.name]
-        args = json.loads(call.function.arguments)
-        result = func(**args)
-        messages.append({
-            "role": "tool",
-            "tool_call_id": call.id,
-            "content": json.dumps(result, ensure_ascii=False),
-        })
-```
-
-> Keep your API key in a `.env` file instead of hardcoding it, and add that file to `.gitignore`.
 
 ## Security Notes
 
 - `read_file` and `edit_file` have **no path restrictions**. They give the agent read/write access to any file on the system. Consider restricting them to a specific working directory before running in untrusted environments.
+- The permission check in `execute` only works as well as your profiles. Give powerful tools (such as `edit_file`) only to the agents that need them, and always by explicit name.
 - `fetch_web_page` and `web_search` bring in external content. That content may contain text that tries to steer the agent's behavior (prompt injection); treat content from the web as data, not as instructions.
+- Keep your API key in a `.env` file instead of hardcoding it, and add that file to `.gitignore`.
 
 ## License
 

@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from ddgs import DDGS
 from typing import List, Dict
 from datetime import datetime
+from registry import register_tool
 
 
 # ==========================================
@@ -20,6 +21,24 @@ def read_file(path: str) -> str:
     except Exception as e:
         return f"Hata: Dosya okunurken bir sorun oluştu: {str(e)}"
 
+register_tool(read_file,
+              {
+                  "type": "function",
+                  "function": {
+                      "name": "read_file",
+                      "description": "Read a text file and return its content",
+                      "parameters": {
+                          "type": "object",
+                          "properties": {
+                              "path": {"type": "string", "description": "Path of the file to read"},
+                          },
+                          "required": ["path"],
+                      },
+                  },
+              },
+              )
+
+
 
 def edit_file(path: str, content: str) -> str:
     """Belirtilen dosyayı yeni içerikle günceller."""
@@ -29,6 +48,25 @@ def edit_file(path: str, content: str) -> str:
         return f"Başarılı: Dosya güncellendi ({path})"
     except Exception as e:
         return f"Hata: Dosya güncellenirken bir sorun oluştu: {str(e)}"
+
+register_tool(edit_file,
+              {
+                  "type": "function",
+                  "function": {
+                      "name": "edit_file",
+                      "description": "Python dosyasını veya metin dosyasını verilen içerikle günceller veya üzerine yazar.",
+                      "parameters": {
+                          "type": "object",
+                          "properties": {
+                              "path": {"type": "string", "description": "Düzenlenecek dosyanın yolu"},
+                              "content": {"type": "string",
+                                          "description": "Dosyaya yazılacak olan yeni içerik (kod veya metin)"},
+                          },
+                          "required": ["path", "content"],
+                      },
+                  },
+              },
+              )
 
 
 def web_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
@@ -46,6 +84,27 @@ def web_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
     except Exception as e:
         return [{"error": f"Arama sırasında hata oluştu: {str(e)}"}]
     return results
+
+register_tool(web_search,
+              {
+                  "type": "function",
+                  "function": {
+                      "name": "web_search",
+                      "description": "Güncel bilgileri, haberleri veya web sitelerini bulmak için internette arama yapar. Başlık, URL ve özet metin döndürür.",
+                      "parameters": {
+                          "type": "object",
+                          "properties": {
+                              "query": {"type": "string",
+                                        "description": "Arama motoruna gönderilecek arama terimi veya soru."},
+                              "max_results": {"type": "integer",
+                                              "description": "Döndürülecek maksimum sonuç sayısı (varsayılan: 5).",
+                                              "default": 5}
+                          },
+                          "required": ["query"]
+                      },
+                  },
+              },
+              )
 
 
 def fetch_web_page(url: str) -> str:
@@ -68,87 +127,22 @@ def fetch_web_page(url: str) -> str:
     except Exception as e:
         return f"Sayfa içeriği çekilirken hata oluştu: {str(e)}"
 
-def md_file_reading(md_file: str) -> str:
-    """Markdown dosyasını okur ve tarih değişkenini günceller."""
-    try:
-        with open(md_file, "r", encoding="utf-8") as f:
-            prompt_template = f.read()
-        now_str = datetime.now().strftime("%d %B %Y, %H:%M")
-        return prompt_template.replace("{{ CURRENT_DATETIME }}", now_str)
-    except FileNotFoundError:
-        return f"Hata: Kurallar dosyası ({md_file}) bulunamadı."
+register_tool(fetch_web_page,
+              {
+                  "type": "function",
+                  "function": {
+                      "name": "fetch_web_page",
+                      "description": "Verilen bir URL'deki web sayfasının detaylı metin içeriğini okur ve getirir.",
+                      "parameters": {
+                          "type": "object",
+                          "properties": {
+                              "url": {"type": "string", "description": "İçeriği okunacak web sitesinin tam URL adresi."}
+                          },
+                          "required": ["url"]
+                      },
+                  },
+              }
+              )
 
 
 
-# ==========================================
-# 2. TOOL HARİTASI VE ŞEMALAR
-# ==========================================
-
-TOOL_MAP = {
-    "read_file": read_file,
-    "edit_file": edit_file,
-    "web_search": web_search,
-    "fetch_web_page": fetch_web_page
-}
-
-TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": "Read a text file and return its content",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Path of the file to read"},
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "edit_file",
-            "description": "Python dosyasını veya metin dosyasını verilen içerikle günceller veya üzerine yazar.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Düzenlenecek dosyanın yolu"},
-                    "content": {"type": "string", "description": "Dosyaya yazılacak olan yeni içerik (kod veya metin)"},
-                },
-                "required": ["path", "content"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "web_search",
-            "description": "Güncel bilgileri, haberleri veya web sitelerini bulmak için internette arama yapar. Başlık, URL ve özet metin döndürür.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Arama motoruna gönderilecek arama terimi veya soru."},
-                    "max_results": {"type": "integer",
-                                    "description": "Döndürülecek maksimum sonuç sayısı (varsayılan: 5).", "default": 5}
-                },
-                "required": ["query"]
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "fetch_web_page",
-            "description": "Verilen bir URL'deki web sayfasının detaylı metin içeriğini okur ve getirir.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "İçeriği okunacak web sitesinin tam URL adresi."}
-                },
-                "required": ["url"]
-            },
-        },
-    }
-]
