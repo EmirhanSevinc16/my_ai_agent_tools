@@ -1,6 +1,6 @@
 # AI Agent Tools
 
-🌐 **English** | [Türkçe](README.tr.md)
+🌐 **English** | [Türkçe](README_tr.md)
 
 A small toolkit for building AI agents (LLM-based agents) that work in different roles. You define each tool **once**, give every agent only the tools its job needs, and run any agent with a single call. Each tool exists as a **Python function** together with an OpenAI-compatible **function calling schema**, so it can be used with NVIDIA, OpenAI, or any other API that supports the `tools` parameter.
 
@@ -14,8 +14,9 @@ A small toolkit for building AI agents (LLM-based agents) that work in different
 - [Tool Details](#tool-details)
   - [read_file](#1-read_file)
   - [edit_file](#2-edit_file)
-  - [web_search](#3-web_search)
-  - [fetch_web_page](#4-fetch_web_page)
+  - [create_file](#3-create_file)
+  - [web_search](#4-web_search)
+  - [fetch_web_page](#5-fetch_web_page)
 - [Registry API](#registry-api)
 - [Agent Profiles](#agent-profiles)
 - [Running an Agent](#running-an-agent)
@@ -89,6 +90,7 @@ Tools register themselves when `tools_and_schemas` is imported. `agents.py` impo
 |------|-------------|------------|-------------|
 | `read_file` | Reads a text file | `path` | `str` |
 | `edit_file` | Writes/overwrites a file with the given content | `path`, `content` | `str` |
+| `create_file` | Creates a new file with optional content (fails if already exists) | `path`, `content` (optional) | `str` |
 | `web_search` | Searches the internet | `query`, `max_results` (optional) | `List[Dict]` |
 | `fetch_web_page` | Fetches the text of a web page | `url` | `str` |
 
@@ -146,7 +148,34 @@ edit_file("notes.txt", "New content goes here")
 
 ---
 
-### 3. `web_search`
+### 3. `create_file`
+
+Creates a new Python or text file at the given path and optionally writes initial content. Automatically creates any missing parent directories (`os.makedirs`).
+
+> 🛡️ **Overwrite Protection:** Unlike `edit_file`, if the target file already exists, it does not overwrite it; instead, it returns an error message prompting the model or user to use `edit_file` for updating existing files.
+
+**Parameters**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `path` | `string` | Yes | – | Path and name of the file to create (e.g. `script.py` or `notes.txt`) |
+| `content` | `string` | No | `""` | Initial content to write to the file (code or text). Can be left empty |
+
+**Returns**
+
+- On success: `Başarılı: Dosya oluşturuldu (<path>)`
+- If file already exists: `Hata: Dosya zaten mevcut: <path>. Mevcut bir dosyayı güncellemek veya üzerine yazmak için 'edit_file' kullanın.`
+- On any other error: `Hata: Dosya oluşturulurken bir sorun oluştu: <error>`
+
+**Example**
+
+```python
+create_file("src/utils.py", "def hello():\n    print('Hello World')")
+```
+
+---
+
+### 4. `web_search`
 
 Searches the internet via DuckDuckGo. Used to find up-to-date information, news, and websites. Returns a title, URL, and short snippet for each result.
 
@@ -181,7 +210,7 @@ web_search("what is python asyncio", max_results=3)
 
 ---
 
-### 4. `fetch_web_page`
+### 5. `fetch_web_page`
 
 Downloads the web page at the given URL, extracts its text content from the HTML, and cleans it. Ideal for reading the detailed content of a result found with `web_search`.
 
@@ -235,8 +264,8 @@ Profiles are defined in `agents.py`, which is the file you edit most often:
 import tools_and_schemas   # loads the tools into the registry
 from registry import define_agent
 
-define_agent("code_agent", tools=["read_file", "edit_file"])
-define_agent("web_researcher", tools=["web_search", "fetch_web_page"])
+define_agent("code_agent", tools=["read_file", "edit_file", "create_file"])
+define_agent("web_researcher", tools=["web_search", "fetch_web_page", "create_file", "edit_file", "read_file"])
 ```
 
 To give an agent a tool it was missing, add the tool's name to its list. To change a profile only while the program is running, use `grant` and `revoke`:
@@ -356,8 +385,8 @@ system_prompt = md_file_reading("code_agent.md")
 
 ## Security Notes
 
-- `read_file` and `edit_file` have **no path restrictions**. They give the agent read/write access to any file on the system. Consider restricting them to a specific working directory before running in untrusted environments.
-- The permission check in `execute` only works as well as your profiles. Give powerful tools (such as `edit_file`) only to the agents that need them, and always by explicit name.
+- `read_file`, `edit_file`, and `create_file` have **no path restrictions**. They give the agent read/write/creation access to any file on the system. Consider restricting them to a specific working directory before running in untrusted environments.
+- The permission check in `execute` only works as well as your profiles. Give powerful tools (such as `edit_file`, `create_file`) only to the agents that need them, and always by explicit name.
 - `fetch_web_page` and `web_search` bring in external content. That content may contain text that tries to steer the agent's behavior (prompt injection); treat content from the web as data, not as instructions.
 - Keep your API key in a `.env` file instead of hardcoding it, and add that file to `.gitignore`.
 

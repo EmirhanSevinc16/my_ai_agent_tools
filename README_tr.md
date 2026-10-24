@@ -14,8 +14,9 @@ Farklı rollerde çalışan yapay zeka agent'ları (LLM tabanlı agent'lar) kurm
 - [Araç Detayları](#araç-detayları)
   - [read_file](#1-read_file)
   - [edit_file](#2-edit_file)
-  - [web_search](#3-web_search)
-  - [fetch_web_page](#4-fetch_web_page)
+  - [create_file](#3-create_file)
+  - [web_search](#4-web_search)
+  - [fetch_web_page](#5-fetch_web_page)
 - [Registry Fonksiyonları](#registry-fonksiyonları)
 - [Agent Profilleri](#agent-profilleri)
 - [Agent Çalıştırma](#agent-çalıştırma)
@@ -89,6 +90,7 @@ Araçlar, `tools_and_schemas` import edildiğinde kendiliğinden kaydolur. `agen
 |------|----------|--------------|------------|
 | `read_file` | Bir metin dosyasını okur | `path` | `str` |
 | `edit_file` | Dosyayı verilen içerikle yazar/üzerine yazar | `path`, `content` | `str` |
+| `create_file` | Yeni bir dosya oluşturur (dosya zaten varsa hata verir) | `path`, `content` (opsiyonel) | `str` |
 | `web_search` | İnternette arama yapar | `query`, `max_results` (opsiyonel) | `List[Dict]` |
 | `fetch_web_page` | Bir web sayfasının metnini getirir | `url` | `str` |
 
@@ -146,7 +148,34 @@ edit_file("notes.txt", "Yeni içerik buraya gelir")
 
 ---
 
-### 3. `web_search`
+### 3. `create_file`
+
+Belirtilen yolda yeni bir Python veya metin dosyası oluşturur ve isteğe bağlı olarak başlangıç içeriği yazar. Belirtilen dosya yolundaki eksik üst klasörleri otomatik olarak oluşturur (`os.makedirs`).
+
+> 🛡️ **Üzerine Yazma Koruması:** `edit_file`'ın aksine, hedef dosya zaten mevcutsa dosyanın üzerine yazmaz; hata mesajı döndürerek kullanıcıyı veya agent'ı mevcut dosyayı güncellemek için `edit_file` kullanmaya yönlendirir.
+
+**Parametreler**
+
+| Ad | Tip | Zorunlu | Varsayılan | Açıklama |
+|----|-----|---------|------------|----------|
+| `path` | `string` | Evet | – | Oluşturulacak dosyanın yolu ve adı (örn: `script.py` veya `notlar.txt`) |
+| `content` | `string` | Hayır | `""` | Dosyaya yazılacak olan başlangıç içeriği (kod veya metin). Boş bırakılabilir |
+
+**Dönüş**
+
+- Başarılıysa: `Başarılı: Dosya oluşturuldu (<path>)`
+- Dosya zaten mevcutsa: `Hata: Dosya zaten mevcut: <path>. Mevcut bir dosyayı güncellemek veya üzerine yazmak için 'edit_file' kullanın.`
+- Başka bir hata olursa: `Hata: Dosya oluşturulurken bir sorun oluştu: <error>`
+
+**Örnek**
+
+```python
+create_file("src/utils.py", "def hello():\n    print('Hello World')")
+```
+
+---
+
+### 4. `web_search`
 
 DuckDuckGo üzerinden internette arama yapar. Güncel bilgileri, haberleri ve web sitelerini bulmak için kullanılır. Her sonuç için başlık, URL ve kısa bir özet döndürür.
 
@@ -181,7 +210,7 @@ web_search("python asyncio nedir", max_results=3)
 
 ---
 
-### 4. `fetch_web_page`
+### 5. `fetch_web_page`
 
 Verilen URL'deki web sayfasını indirir, HTML'den metin içeriğini çıkarır ve temizler. `web_search` ile bulunan bir sonucun detaylı içeriğini okumak için idealdir.
 
@@ -235,8 +264,8 @@ Profiller, en sık düzenleyeceğin dosya olan `agents.py` içinde tanımlanır:
 import tools_and_schemas   # araçları depoya yükler
 from registry import define_agent
 
-define_agent("code_agent", tools=["read_file", "edit_file"])
-define_agent("web_researcher", tools=["web_search", "fetch_web_page"])
+define_agent("code_agent", tools=["read_file", "edit_file", "create_file"])
+define_agent("web_researcher", tools=["web_search", "fetch_web_page", "create_file", "edit_file", "read_file"])
 ```
 
 Bir agent'a eksik olan bir aracı vermek için aracın adını listesine ekle. Bir profili sadece program çalışırken değiştirmek için `grant` ve `revoke` kullan:
@@ -356,8 +385,8 @@ system_prompt = md_file_reading("code_agent.md")
 
 ## Güvenlik Notları
 
-- `read_file` ve `edit_file` için **yol kısıtlaması yoktur**. Agent'a sistemdeki herhangi bir dosyayı okuma/yazma erişimi verirler. Güvenilmeyen ortamlarda çalıştırmadan önce bunları belirli bir çalışma klasörüyle sınırlamayı düşün.
-- `execute` içindeki izin kontrolü, ancak profillerin kadar güvenlidir. Güçlü araçları (örneğin `edit_file`) sadece ihtiyacı olan agent'lara ve her zaman açıkça isimle ver.
+- `read_file`, `edit_file` ve `create_file` için **yol kısıtlaması yoktur**. Agent'a sistemdeki herhangi bir dosyayı okuma/yazma/oluşturma erişimi verirler. Güvenilmeyen ortamlarda çalıştırmadan önce bunları belirli bir çalışma klasörüyle sınırlamayı düşün.
+- `execute` içindeki izin kontrolü, ancak profillerin kadar güvenlidir. Güçlü araçları (örneğin `edit_file`, `create_file`) sadece ihtiyacı olan agent'lara ve her zaman açıkça isimle ver.
 - `fetch_web_page` ve `web_search` dışarıdan içerik getirir. Bu içerik agent'ın davranışını yönlendirmeye çalışan metinler barındırabilir (prompt injection); web'den gelen içeriği talimat değil, veri olarak değerlendir.
 - API anahtarını koda yazmak yerine bir `.env` dosyasında tut ve bu dosyayı `.gitignore`'a ekle.
 

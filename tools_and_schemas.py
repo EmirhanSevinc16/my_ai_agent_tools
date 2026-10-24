@@ -146,3 +146,39 @@ register_tool(fetch_web_page,
 
 
 
+def create_file(path: str, content: str = "") -> str:
+    """Yeni bir Python veya metin dosyası oluşturur ve isteğe bağlı içerik yazar."""
+    try:
+        if os.path.exists(path):
+            return f"Hata: Dosya zaten mevcut: {path}. Mevcut bir dosyayı güncellemek veya üzerine yazmak için 'edit_file' kullanın."
+
+        dir_name = os.path.dirname(path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return f"Başarılı: Dosya oluşturuldu ({path})"
+    except Exception as e:
+        return f"Hata: Dosya oluşturulurken bir sorun oluştu: {str(e)}"
+
+register_tool(create_file,
+              {
+                  "type": "function",
+                  "function": {
+                      "name": "create_file",
+                      "description": "Yeni bir Python (.py) veya metin (.txt) dosyası oluşturur ve isteğe bağlı olarak başlangıç içeriği yazar.",
+                      "parameters": {
+                          "type": "object",
+                          "properties": {
+                              "path": {"type": "string",
+                                      "description": "Oluşturulacak dosyanın yolu ve adı (örn: script.py veya notlar.txt)"},
+                              "content": {"type": "string",
+                                          "description": "Dosyaya yazılacak olan başlangıç içeriği (kod veya metin). Boş bırakılabilir.",
+                                          "default": ""},
+                          },
+                          "required": ["path"],
+                      },
+                  },
+              },
+              )
